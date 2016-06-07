@@ -1,3 +1,8 @@
+# This code reads in DSS data
+# removes those mothers without a PERMID
+# and selects (randomly) one child for each mother
+# before writing a csv with the random selection
+
 library(foreign)
 library(readstata13)
 library(dplyr)

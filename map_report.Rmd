@@ -140,7 +140,7 @@ coord_map() +
   theme_fivethirtyeight() +
   xlab('Longitude') +
   ylab('Latitude') +
-  labs(title = 'HIV cascade spatial distribution',
+  labs(title = 'Spatial distribution',
        subtitle = '3 months')
 g
 ```
@@ -150,6 +150,8 @@ g
 Patients who are lost to follow up are represented by smaller, semi-transparent points.
 
 ## Basic interactive map
+
+Create a box on the map to zoom in. Double-click to zoom out. Click on the legend to remove or add points. Mouse over the points to get more details.
 
 ```{r}
 ggplotly(g)

@@ -118,7 +118,7 @@ title(main = 'HIV cascade for TESFAM cohort at 3 months')
 
 ```
 
-## Fancy static map
+## Fancy static maps
 
 ```{r}
 
@@ -134,7 +134,8 @@ coord_map() +
                                                                 'Not lost')),
               aes(x = lon, y = lat,
                   color = testgroup,
-                  pch = `Follow up`)) +
+                  pch = `Follow up`),
+             size = 0.5) +
   scale_color_manual(name = 'Testing venue',
                      values = cols) +
   theme_fivethirtyeight() +
@@ -143,6 +144,35 @@ coord_map() +
   labs(title = 'Spatial distribution',
        subtitle = '3 months')
 g
+```
+
+```{r}
+# Same as above but at 6 months
+
+cols <- c('blue', 'darkorange', 'darkgreen')
+g <- 
+  ggplot() +
+coord_map() +
+  geom_polygon(data = man3_fortified,
+               aes(x = long, y =lat, group = group), 
+               fill = 'grey', color = 'white') +
+  geom_point(data = tesfam@data %>% 
+               mutate(`Follow up` = ifelse(abandono_6mo == 1, 'Lost',
+                                                                'Not lost')),
+              aes(x = lon, y = lat,
+                  color = testgroup,
+                  pch = `Follow up`),
+             size = 0.5) +
+  scale_color_manual(name = 'Testing venue',
+                     values = cols) +
+  theme_fivethirtyeight() +
+  xlab('Longitude') +
+  ylab('Latitude') +
+  labs(title = 'Spatial distribution',
+       subtitle = '6 months')
+g
+```
+
 ```
 
 # Interactive maps

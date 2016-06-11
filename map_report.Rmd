@@ -37,6 +37,63 @@ library(maptools)
 library(plotly)
 library(ggthemes)
 
+# Manually enter in the location of health posts
+unidades_sanitarias <- 
+  data.frame(name = c('Xinavane',
+                      '3 de fevereiro',
+                      'Iha Josina',
+                      'Mirrona',
+                      'Taninga',
+                      'Manxiane',
+                      'Palmeiras',
+                      'Chibucutsu'),
+             lat = c("25'2'815",
+                     "25'9'43",
+                     "25'5'617",
+                     "25'13'48",
+                     "25'10'74",
+                     "25'18'55",
+                     "25'15'73",
+                     "25'17'21"),
+             lng = c("32'48'308",
+                     "32'48'033",
+                     "32'55'035",
+                     "32'39'86",
+                     "32'51'12",
+                     "32'49'97",
+                     "32'51'87",
+                     "32'44'41"),
+             stringsAsFactors = FALSE)
+
+# Define function for converting UTM to lat lon
+# (not currently vectorized, need to run loop)
+convert_ll<-function(x){
+  z <- as.numeric(gsub('\"', '', unlist(strsplit(x, '<b0>|\''))))
+  as.numeric(z[1] + (z[2]/60) + (z[3]/3600))
+} 
+
+# Convert the coordinates of health posts to lat long
+for (i in 1:nrow(unidades_sanitarias)){
+  unidades_sanitarias$x[i] <-
+  unidades_sanitarias$lon[i] <-
+  unidades_sanitarias$lng[i] <- 
+  as.numeric(convert_ll(unidades_sanitarias$lng[i]))
+  unidades_sanitarias$y[i] <-
+  unidades_sanitarias$lat[i] <-
+  as.numeric(convert_ll(unidades_sanitarias$lat[i]) * -1)
+}
+
+# Make it all numeric
+for (j in 2:ncol(unidades_sanitarias)){
+  unidades_sanitarias[,j] <-
+    as.numeric(unidades_sanitarias[,j])
+}
+
+# Make spatial
+coordinates(unidades_sanitarias) <- ~x+y
+proj4string(unidades_sanitarias) <- 
+  CRS("+proj=longlat +ellps=WGS84 +datum=WGS84")
+
 # Read in tesfam
 tesfam <- read.dta13('TESFAM_variables_selecion_02.dta')
 
@@ -65,6 +122,28 @@ tesfam <- spTransform(tesfam,CRS("+proj=longlat +ellps=WGS84 +datum=WGS84"))
 # Overwrite lat long
 tesfam$lon <- coordinates(tesfam)[,1]
 tesfam$lat <- coordinates(tesfam)[,2]
+
+# Get distance to and name of nearest health center for each
+# person in tesfam
+tesfam$health_post <- NA
+tesfam$distance <- NA
+
+# Now calculate distance
+distances <- 
+  spDists(x = tesfam, 
+        y = unidades_sanitarias,
+        longlat = TRUE,
+        diagonal = FALSE)
+
+# Add distances to coordenadas dataframe
+tesfam$distance <- 
+  apply(distances, 1, function(x){x[which.min(x)]})
+
+# Get nearest center
+tesfam$health_post <- 
+  apply(distances,
+        1, function(x){unidades_sanitarias$name[which.min(x)]})
+
 
 # Get mozambique shapefile
 moz <- getData('GADM', country = 'MOZ', level = 2)
@@ -172,6 +251,32 @@ coord_map() +
        subtitle = '6 months')
 g
 ```
+
+```{r}
+# Distance to health post
+g <- 
+  ggplot() +
+coord_map() +
+  geom_polygon(data = man3_fortified,
+               aes(x = long, y =lat, group = group), 
+               fill = 'grey', color = 'white') +
+
+  geom_point(data = tesfam@data %>% 
+               mutate(`Follow up` = ifelse(abandono_6mo == 1, 'Lost',
+                                                                'Not lost')),
+              aes(x = lon, y = lat,
+                  color = distance,
+                  pch = `Follow up`),
+             size = 0.5) +
+    geom_point(data = unidades_sanitarias@data,
+               aes(x = lon, y = lat),
+             color = 'red') %>%
+  # scale_color_gradientn(colours = terrain.colors(10))
+  theme_fivethirtyeight() +
+  xlab('Longitude') +
+  ylab('Latitude') +
+  labs(title = 'Distance to nearest health facility',
+       subtitle = '(The red dots are the health facilities)')
 
 ```
 

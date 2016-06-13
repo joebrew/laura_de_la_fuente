@@ -178,11 +178,15 @@ tesfam$shape <-
 ```{r}
 # Plot using base map
 plot(man3, col = 'grey', border = 'white')
+# People points
 points(tesfam, 
        col = adjustcolor(tesfam$color, alpha.f = 0.7), 
        pch = tesfam$shape, 
        cex = 0.2)
-
+# Health center points
+points(unidades_sanitarias,
+       col = adjustcolor('darkred', alpha.f = 0.7),
+       pch = 1)
 # Add legend
 legend('topleft',
        col = c('blue', 'darkorange', 'darkgreen'),
@@ -193,7 +197,12 @@ legend('bottomright',
        pch = c(17, 16),
        legend = c('Lost to follow-up', 'Followed-up'),
        title = 'Linkage at 3 months')
+legend('topright',
+       pch = 1,
+       col = adjustcolor('darkred', alpha.f = 0.8),
+       legend = 'Health centers')
 title(main = 'HIV cascade for TESFAM cohort at 3 months')
+
 
 ```
 
@@ -221,7 +230,7 @@ coord_map() +
   xlab('Longitude') +
   ylab('Latitude') +
   labs(title = 'Spatial distribution',
-       subtitle = '3 months')
+       subtitle = '3 months follow-up')
 g
 ```
 
@@ -248,7 +257,7 @@ coord_map() +
   xlab('Longitude') +
   ylab('Latitude') +
   labs(title = 'Spatial distribution',
-       subtitle = '6 months')
+       subtitle = '6 months follow-up')
 g
 ```
 
@@ -260,24 +269,24 @@ coord_map() +
   geom_polygon(data = man3_fortified,
                aes(x = long, y =lat, group = group), 
                fill = 'grey', color = 'white') +
-
   geom_point(data = tesfam@data %>% 
                mutate(`Follow up` = ifelse(abandono_6mo == 1, 'Lost',
-                                                                'Not lost')),
+                                                                'Not lost'),
+                      `Distance to health post` = distance),
               aes(x = lon, y = lat,
-                  color = distance,
+                  color = `Distance to health post`,
                   pch = `Follow up`),
              size = 0.5) +
     geom_point(data = unidades_sanitarias@data,
                aes(x = lon, y = lat),
-             color = 'red') %>%
-  # scale_color_gradientn(colours = terrain.colors(10))
-  theme_fivethirtyeight() +
+             color = 'red') +
+  # scale_color_gradientn(colours = terrain.colors(10)) +
+  theme_fivethirtyeight(base_size = 12) +
   xlab('Longitude') +
   ylab('Latitude') +
-  labs(title = 'Distance to nearest health facility',
+  labs(title = 'Distance to nearest\nhealth post',
        subtitle = '(The red dots are the health facilities)')
-
+g
 ```
 
 # Interactive maps
@@ -293,6 +302,8 @@ ggplotly(g)
 ```
 
 ## Fancy interactive satellite map
+
+The blue markers are health posts.
 
 ```{r}
 library(leaflet)
@@ -338,12 +349,17 @@ leaflet() %>%
                                  'Group: ', not_lost$testgroup, '\n',
                                  '3 month followup: ', 
                                  ifelse(not_lost$abandono_3mo == 1, 'Lost',
-                                        'Not not_lost')))#,
+                                        'Not not_lost'))) %>% #,
                   # clusterOptions = markerClusterOptions()) 
+  addMarkers(lng = unidades_sanitarias@data$lng,
+             lat = unidades_sanitarias@data$lat,
+             popup = unidades_sanitarias@data$name)
 ```
 
 
 ## Fancy interactive road map
+
+The blue markers are health posts.
 
 ```{r}
 library(leaflet)
@@ -389,8 +405,54 @@ leaflet() %>%
                                  'Group: ', not_lost$testgroup, '\n',
                                  '3 month followup: ', 
                                  ifelse(not_lost$abandono_3mo == 1, 'Lost',
-                                        'Not not_lost')))#,
+                                        'Not not_lost'))) %>%#,
                   # clusterOptions = markerClusterOptions()) 
-  
+    addMarkers(lng = unidades_sanitarias@data$lng,
+             lat = unidades_sanitarias@data$lat,
+             popup = unidades_sanitarias@data$name)
 
 ```
+
+# Analysis
+
+Association between distance to center and likelihood of being lost to follow-up. 
+
+```{r}
+# Logistic regression model
+fit <- glm(abandono_6mo ~ distance, 
+           data = tesfam@data,
+           family = binomial('logit'))
+ors <- exp(cbind(OR = coef(fit), confint(fit))) %>%
+  data.frame
+```
+
+Using a simple logistic regression model, we estimate that for every 1 kilometer further from a health post, the odds of being lost to follow-up at 6 months increases by `r round((ors$OR[2] - 1) * 100, digits = 2)`% (OR of `r ors$OR[2]`, 95% confidence interval of `r ors$X2.5..[2]` to `r ors$X97.5..[2]`). Our fitted model can be visualized like this.
+
+```{r}
+fake <- data.frame(distance = seq(0, 25, length = 100))
+predictions <- predict(fit, fake, type = 'link', se = TRUE)
+fake$predicted <- plogis(predictions$fit)
+fake$lwr <- plogis(predictions$fit - (1.96 * predictions$se.fit))
+fake$upr <- plogis(predictions$fit + (1.96 * predictions$se.fit))
+
+# Gather
+fake_gathered <- tidyr::gather(data = fake,
+                               key, 
+                               value, 
+                               predicted:upr)
+
+ggplot(data = fake) +
+  geom_linerange(aes(x = distance,
+                     ymax = upr,
+                     ymin = lwr),
+                 alpha = 0.6) +
+  geom_line(aes(x = distance, y = predicted),
+            color = 'red') +
+  labs(title = 'Distance matters',
+       subtitle = 'Association of distance to health post and getting lost') +
+  theme_economist() +
+    xlab('Kilometers to health post') +
+  ylab('Likelihood of being lost to follow-up at 6 mo') 
+```
+
+

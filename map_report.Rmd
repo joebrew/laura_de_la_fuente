@@ -37,42 +37,54 @@ library(maptools)
 library(plotly)
 library(ggthemes)
 
-# Manually enter in the location of health posts
-unidades_sanitarias <- 
-  data.frame(name = c('Xinavane',
-                      '3 de fevereiro',
-                      'Iha Josina',
-                      'Mirrona',
-                      'Taninga',
-                      'Manxiane',
-                      'Palmeiras',
-                      'Chibucutsu'),
-             lat = c("25'2'815",
-                     "25'9'43",
-                     "25'5'617",
-                     "25'13'48",
-                     "25'10'74",
-                     "25'18'55",
-                     "25'15'73",
-                     "25'17'21"),
-             lng = c("32'48'308",
-                     "32'48'033",
-                     "32'55'035",
-                     "32'39'86",
-                     "32'51'12",
-                     "32'49'97",
-                     "32'51'87",
-                     "32'44'41"),
-             stringsAsFactors = FALSE)
+# # Manually enter in the location of health posts
+# unidades_sanitarias <- 
+#   data.frame(name = c('Xinavane',
+#                       '3 de fevereiro',
+#                       'Iha Josina',
+#                       'Mirrona',
+#                       'Taninga',
+#                       'Manxiane',
+#                       'Palmeiras',
+#                       'Chibucutsu'),
+#              lat = c("25'2'815",
+#                      "25'9'43",
+#                      "25'5'617",
+#                      "25'13'48",
+#                      "25'10'74",
+#                      "25'18'55",
+#                      "25'15'73",
+#                      "25'17'21"),
+#              lng = c("32'48'308",
+#                      "32'48'033",
+#                      "32'55'035",
+#                      "32'39'86",
+#                      "32'51'12",
+#                      "32'49'97",
+#                      "32'51'87",
+#                      "32'44'41"),
+#              stringsAsFactors = FALSE)
+
+# Read in spreadsheet (manually made by me, based on emails
+# from Charfudin / Aura) of unidades_sanitarias
+unidades_sanitarias <- read_csv('coordenadas_unidades_sanitarias.csv')
+unidades_sanitarias <- data.frame(unidades_sanitarias)
 
 # Define function for converting UTM to lat lon
 # (not currently vectorized, need to run loop)
-convert_ll<-function(x){
-  z <- as.numeric(gsub('\"', '', unlist(strsplit(x, '<b0>|\''))))
-  as.numeric(z[1] + (z[2]/60) + (z[3]/3600))
-} 
+# convert_ll<-function(x){
+#   z <- as.numeric(gsub('\"', '', unlist(strsplit(x, '<b0>|\''))))
+#   as.numeric(z[1] + (z[2]/60) + (z[3]/3600))
+# } 
+convert_ll <- function(x){
+  z <- unlist(strsplit(x, '°|\'|"'))
+  as.numeric(z[1]) + (as.numeric(z[2])/60) + (as.numeric(z[3])/3600)
+}
 
 # Convert the coordinates of health posts to lat long
+unidades_sanitarias$lon <-
+  unidades_sanitarias$x <-
+  unidades_sanitarias$y <- NA
 for (i in 1:nrow(unidades_sanitarias)){
   unidades_sanitarias$x[i] <-
   unidades_sanitarias$lon[i] <-

@@ -152,6 +152,10 @@ distances <-
 tesfam$distance <- 
   apply(distances, 1, function(x){x[which.min(x)]})
 
+tesfam$distance_to_manhica_health_post <-
+    apply(distances, 1, function(x){x[which.min(x)]})
+
+
 # Get nearest center
 tesfam$health_post <- 
   apply(distances,
@@ -368,16 +372,21 @@ The below shows the catchment breakdowns.
 ```{r}
 catchment_data <- df_grid_small@data
 cols <- colorRampPalette(brewer.pal(9, 'Spectral'))(length(unique(df_grid_small@data$health_post)))
-ggplot(data = catchment_data,
+ggplot() +
+  geom_point(data = catchment_data,
        aes(x = longitude,
            y = latitude,
            color = health_post)) +
-  geom_point() +
   scale_colour_manual(name = 'Health post',
                     values = cols) +
   xlab('Longitude') +
   ylab('Latitude') +
-  theme_bw()
+  theme_bw() +
+  geom_polygon(data = man3_fortified,
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = 'black') +
+  geom_point(data = unidades_sanitarias@data,
+             aes(x = lng, y = lat))
 ```
 
 We can also visual the number of study participants who fall into each catchment area:

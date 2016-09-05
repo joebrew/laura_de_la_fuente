@@ -37,6 +37,8 @@ library(maptools)
 library(plotly)
 library(ggthemes)
 library(rasterVis)
+library(rgdal)
+library(readxl)
 
 # # Manually enter in the location of health posts
 # unidades_sanitarias <- 
@@ -66,46 +68,78 @@ library(rasterVis)
 #                      "32'44'41"),
 #              stringsAsFactors = FALSE)
 
-# Read in spreadsheet (manually made by me, based on emails
-# from Charfudin / Aura) of unidades_sanitarias
-unidades_sanitarias <- read_csv('coordenadas_unidades_sanitarias.csv')
-unidades_sanitarias <- data.frame(unidades_sanitarias)
+# # Read in spreadsheet (manually made by me, based on emails
+# # from Charfudin / Aura) of unidades_sanitarias
+# unidades_sanitarias <- read_csv('coordenadas_unidades_sanitarias.csv')
+# unidades_sanitarias <- data.frame(unidades_sanitarias)
+# 
+# # Define function for converting UTM to lat lon
+# # (not currently vectorized, need to run loop)
+# # convert_ll<-function(x){
+# #   z <- as.numeric(gsub('\"', '', unlist(strsplit(x, '<b0>|\''))))
+# #   as.numeric(z[1] + (z[2]/60) + (z[3]/3600))
+# # } 
+# convert_ll <- function(x){
+#   z <- unlist(strsplit(x, '°|\'|"'))
+#   as.numeric(z[1]) + (as.numeric(z[2])/60) + (as.numeric(z[3])/3600)
+# }
+# 
+# # Convert the coordinates of health posts to lat long
+# unidades_sanitarias$lon <-
+#   unidades_sanitarias$x <-
+#   unidades_sanitarias$y <- NA
+# for (i in 1:nrow(unidades_sanitarias)){
+#   unidades_sanitarias$x[i] <-
+#   unidades_sanitarias$lon[i] <-
+#   unidades_sanitarias$lng[i] <- 
+#   as.numeric(convert_ll(unidades_sanitarias$lng[i]))
+#   unidades_sanitarias$y[i] <-
+#   unidades_sanitarias$lat[i] <-
+#   as.numeric(convert_ll(unidades_sanitarias$lat[i]) * -1)
+# }
+# 
+# # Make it all numeric
+# for (j in 2:ncol(unidades_sanitarias)){
+#   unidades_sanitarias[,j] <-
+#     as.numeric(unidades_sanitarias[,j])
+# }
+# 
+# # Make spatial
+# coordinates(unidades_sanitarias) <- ~x+y
+# proj4string(unidades_sanitarias) <- 
+#   CRS("+proj=longlat +ellps=WGS84 +datum=WGS84")
 
-# Define function for converting UTM to lat lon
-# (not currently vectorized, need to run loop)
-# convert_ll<-function(x){
-#   z <- as.numeric(gsub('\"', '', unlist(strsplit(x, '<b0>|\''))))
-#   as.numeric(z[1] + (z[2]/60) + (z[3]/3600))
-# } 
-convert_ll <- function(x){
-  z <- unlist(strsplit(x, '°|\'|"'))
-  as.numeric(z[1]) + (as.numeric(z[2])/60) + (as.numeric(z[3])/3600)
-}
+# Alternative unidades sanitarias (sent 2016-10-05)
+us <- readxl::read_excel('coordenadas_utm.xlsx')
+names(us) <- c('unidad_sanitaria',
+               'location')
 
-# Convert the coordinates of health posts to lat long
-unidades_sanitarias$lon <-
-  unidades_sanitarias$x <-
-  unidades_sanitarias$y <- NA
-for (i in 1:nrow(unidades_sanitarias)){
-  unidades_sanitarias$x[i] <-
-  unidades_sanitarias$lon[i] <-
-  unidades_sanitarias$lng[i] <- 
-  as.numeric(convert_ll(unidades_sanitarias$lng[i]))
-  unidades_sanitarias$y[i] <-
-  unidades_sanitarias$lat[i] <-
-  as.numeric(convert_ll(unidades_sanitarias$lat[i]) * -1)
-}
+# Create x and y
+us$x <- us$y <- NA
+us$x <- unlist(lapply(strsplit(us$location, split = '/'), function(x){x[1]}))
+us$y <- unlist(lapply(strsplit(us$location, split = '/'), function(x){x[2]}))
+us$x <- as.numeric(us$x)
+us$y <- as.numeric(us$y)
 
-# Make it all numeric
-for (j in 2:ncol(unidades_sanitarias)){
-  unidades_sanitarias[,j] <-
-    as.numeric(unidades_sanitarias[,j])
-}
+# Create a UTM x and y
+us$utm_x <- us$x
+us$utm_y <- us$y
 
-# Make spatial
-coordinates(unidades_sanitarias) <- ~x+y
-proj4string(unidades_sanitarias) <- 
-  CRS("+proj=longlat +ellps=WGS84 +datum=WGS84")
+# Make spatial 
+coordinates(us) <- ~x+y
+# Assing projection
+proj4string(us) <- CRS("+proj=utm +zone=36 +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+# Convert to lat/lng
+us <- spTransform(us,
+              CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +towgs84=0,0,0"))
+
+# Extract the coordinates
+ll <- coordinates(us)
+# Add back into the original dataframe
+us$lng <- ll[,1]
+us$lat <- ll[,2]
+unidades_sanitarias <- us
+
 
 # Read in tesfam
 tesfam <- read.dta13('TESFAM_variables_selecion_02.dta')
@@ -367,16 +401,49 @@ proj4string(r) <- proj4string(man3)
 
 Having calculated the distances to all areas, we can examine "catchment areas". This is useful to analyze health post burden, as well as mismatching.
 
+The below is a map of the health posts only.
+
+```{r}
+# Get a label column in unidades_sanitarias
+unidades_sanitarias@data$label <-
+  Hmisc::capitalize(trimws(gsub('Centro de saude de', '', unidades_sanitarias@data$unidad_sanitaria), 'both'))
+
+library(ggrepel)
+ggplot() +
+  xlab('Longitude') +
+  ylab('Latitude') +
+  theme_bw() +
+  geom_polygon(data = man3_fortified,
+               aes(x = long, y = lat, group = group),
+               fill = 'grey', color = 'darkgrey') +
+  geom_point(data = unidades_sanitarias@data,
+             aes(x = lng, y = lat)) +
+  geom_label_repel(data = unidades_sanitarias@data,
+             aes(x = lng, y = lat,
+                 label = unidades_sanitarias@data$label),
+             fill = 'darkgreen',
+             alpha = 0.5,
+             fontface = 'bold', color = 'white',
+             box.padding = unit(0.25, 'lines'),
+             point.padding = unit(0.5, 'lines')) +
+  coord_map()
+
+```
+
 The below shows the catchment breakdowns.
 
 ```{r}
 catchment_data <- df_grid_small@data
+catchment_data <- catchment_data %>%
+  left_join(unidades_sanitarias@data %>%
+              dplyr::select(label, unidad_sanitaria),
+            by = c('health_post' = 'unidad_sanitaria'))
 cols <- colorRampPalette(brewer.pal(9, 'Spectral'))(length(unique(df_grid_small@data$health_post)))
 ggplot() +
   geom_point(data = catchment_data,
        aes(x = longitude,
            y = latitude,
-           color = health_post)) +
+           color = label)) +
   scale_colour_manual(name = 'Health post',
                     values = cols) +
   xlab('Longitude') +
@@ -386,7 +453,8 @@ ggplot() +
                aes(x = long, y = lat, group = group),
                fill = NA, color = 'black') +
   geom_point(data = unidades_sanitarias@data,
-             aes(x = lng, y = lat))
+             aes(x = lng, y = lat)) +
+  coord_map()
 ```
 
 We can also visual the number of study participants who fall into each catchment area:

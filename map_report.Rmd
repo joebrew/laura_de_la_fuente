@@ -21,8 +21,6 @@ opts_chunk$set(comment = NA,
 ```
 
 
-
-
 ```{r}
 library(foreign)
 library(readstata13)
@@ -39,76 +37,7 @@ library(ggthemes)
 library(rasterVis)
 library(rgdal)
 library(readxl)
-
-# # Manually enter in the location of health posts
-# unidades_sanitarias <- 
-#   data.frame(name = c('Xinavane',
-#                       '3 de fevereiro',
-#                       'Iha Josina',
-#                       'Mirrona',
-#                       'Taninga',
-#                       'Manxiane',
-#                       'Palmeiras',
-#                       'Chibucutsu'),
-#              lat = c("25'2'815",
-#                      "25'9'43",
-#                      "25'5'617",
-#                      "25'13'48",
-#                      "25'10'74",
-#                      "25'18'55",
-#                      "25'15'73",
-#                      "25'17'21"),
-#              lng = c("32'48'308",
-#                      "32'48'033",
-#                      "32'55'035",
-#                      "32'39'86",
-#                      "32'51'12",
-#                      "32'49'97",
-#                      "32'51'87",
-#                      "32'44'41"),
-#              stringsAsFactors = FALSE)
-
-# # Read in spreadsheet (manually made by me, based on emails
-# # from Charfudin / Aura) of unidades_sanitarias
-# unidades_sanitarias <- read_csv('coordenadas_unidades_sanitarias.csv')
-# unidades_sanitarias <- data.frame(unidades_sanitarias)
-# 
-# # Define function for converting UTM to lat lon
-# # (not currently vectorized, need to run loop)
-# # convert_ll<-function(x){
-# #   z <- as.numeric(gsub('\"', '', unlist(strsplit(x, '<b0>|\''))))
-# #   as.numeric(z[1] + (z[2]/60) + (z[3]/3600))
-# # } 
-# convert_ll <- function(x){
-#   z <- unlist(strsplit(x, '°|\'|"'))
-#   as.numeric(z[1]) + (as.numeric(z[2])/60) + (as.numeric(z[3])/3600)
-# }
-# 
-# # Convert the coordinates of health posts to lat long
-# unidades_sanitarias$lon <-
-#   unidades_sanitarias$x <-
-#   unidades_sanitarias$y <- NA
-# for (i in 1:nrow(unidades_sanitarias)){
-#   unidades_sanitarias$x[i] <-
-#   unidades_sanitarias$lon[i] <-
-#   unidades_sanitarias$lng[i] <- 
-#   as.numeric(convert_ll(unidades_sanitarias$lng[i]))
-#   unidades_sanitarias$y[i] <-
-#   unidades_sanitarias$lat[i] <-
-#   as.numeric(convert_ll(unidades_sanitarias$lat[i]) * -1)
-# }
-# 
-# # Make it all numeric
-# for (j in 2:ncol(unidades_sanitarias)){
-#   unidades_sanitarias[,j] <-
-#     as.numeric(unidades_sanitarias[,j])
-# }
-# 
-# # Make spatial
-# coordinates(unidades_sanitarias) <- ~x+y
-# proj4string(unidades_sanitarias) <- 
-#   CRS("+proj=longlat +ellps=WGS84 +datum=WGS84")
-
+options(scipen = 999)
 # Alternative unidades sanitarias (sent 2016-10-05)
 us <- readxl::read_excel('coordenadas_utm.xlsx')
 names(us) <- c('unidad_sanitaria',
@@ -143,6 +72,7 @@ unidades_sanitarias <- us
 
 # Read in tesfam
 tesfam <- read.dta13('TESFAM_variables_selecion_02.dta')
+# tesfam <- read.dta13('joined_with_clinical_wf_1123_CLEAN_use05092016finalnonames_v12.dta')
 
 # Read in coords
 coords <- read_csv('Coordenadas.csv')
@@ -418,14 +348,14 @@ ggplot() +
                fill = 'grey', color = 'darkgrey') +
   geom_point(data = unidades_sanitarias@data,
              aes(x = lng, y = lat)) +
-  geom_label_repel(data = unidades_sanitarias@data,
-             aes(x = lng, y = lat,
-                 label = unidades_sanitarias@data$label),
-             fill = 'darkgreen',
-             alpha = 0.5,
-             fontface = 'bold', color = 'white',
-             box.padding = unit(0.25, 'lines'),
-             point.padding = unit(0.5, 'lines')) +
+  # geom_label_repel(data = unidades_sanitarias@data,
+  #            aes(x = lng, y = lat,
+  #                label = unidades_sanitarias@data$label),
+  #            fill = 'darkgreen',
+  #            alpha = 0.5,
+  #            fontface = 'bold', color = 'white',
+  #            box.padding = unit(0.25, 'lines'),
+  #            point.padding = unit(0.5, 'lines')) +
   coord_map()
 
 ```
@@ -590,19 +520,842 @@ ggplot(data = temp,
   ggtitle('Average distance from post to patients for each catchment area')
 ```
 
-# Distance-weighted HIV prevalence score
 
-Requires full HIV prevalence data.
+# Population and HIV information
 
+We do not have the _true_ spatial distribution of every HIV positive resident of Manhiça. However, we do have two key pieces of data which allow us to _estimate_ that distribution. These are:
+
+1. HIV prevalence by age group and sex.
+2. The true spatial distribution of all Manhiça residents (from the census), regardless of HIV status.
+
+```{r}
+# Manually input hiv prevalence by age / sex
+hiv_prev <- 
+  expand.grid(sex = c('male', 'female'),
+              age = c('15-18',
+                      '18-27',
+                      '28-37',
+                      '38-49',
+                      '50-64',
+                      '65+'))
+hiv_prev$prevalence <-
+  c(3.0,
+    10,
+    15.8,
+    25.6,
+    40.5,
+    46.3,
+    43,
+    46,
+    19.5,
+    25,
+    8.2,
+    6.1)
+
+```
+
+The distribution of HIV positivity by sex and age appears as below (data provided by Denise to Joe on September 21, 2016.
+
+```{r}
+ggplot(data = hiv_prev,
+       aes(x = age,
+           y = prevalence,
+           group = sex,
+           fill = sex)) +
+  geom_bar(position = 'dodge',
+           stat = 'identity',
+           alpha = 0.6) +
+  scale_fill_manual(name = 'Sex',
+                    values = c('darkblue', 'darkred')) +
+  theme_tufte() +
+  xlab('Age') +
+  ylab('%') +
+  ggtitle('HIV Prevalence by age and sex',
+          'Resident of Manhiça, Mozambique')
+```
+
+
+## Population density
+
+```{r}
+# GET CENSUS DATA
+# Manhica ----------------------------------------------------------
+load('census/openhds/2016-07-15_individual.RData')
+individual$dob <- as.Date(individual$dob)
+individual$house_number <- substr(individual$lastName, 1, 8)
+individual$name <- individual$firstName
+individual$permid <- individual$lastName
+individual <- individual %>%
+  dplyr::select(permid, name, house_number, dob, gender)
+# Read in coordinates (emailed from Charfudin)
+coords <- read_csv('census/openhds/Coordenadas.csv')
+names(coords) <- c('house_number', 'region', 'lat', 'lng')
+coords$region <- NULL
+# Combine
+census_manhica <- left_join(individual,
+                            coords,
+                            by = 'house_number')
+rm(individual, coords)
+
+# Convert census_manhica to lat/lng
+census_manhica_location <- census_manhica %>% filter(!is.na(lat) & !is.na(lng))
+census_manhica_no_location <- census_manhica %>% filter(is.na(lat) | is.na(lng))
+sp::coordinates(census_manhica_location) <- ~lng+lat
+proj4string(census_manhica_location) <- CRS("+proj=utm +zone=36 +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+census_manhica_location <- spTransform(census_manhica_location, CRS('+proj=longlat'))
+# Extract the coordinates
+ll <- coordinates(census_manhica_location)
+# Add back into the original dataframe
+census_manhica_location$x <- ll[,1]
+census_manhica_location$y <- ll[,2]
+census_manhica_location <- data.frame(census_manhica_location@data)
+# change names
+census_manhica_location <-
+  census_manhica_location %>%
+  rename(lng = x,
+         lat = y)
+# Combine all of manhica back together
+census_manhica <-
+  rbind(census_manhica_location,
+        census_manhica_no_location)
+rm(census_manhica_location, census_manhica_no_location)
+
+# Expand coordinates
+census_manhica$longitude <-
+  census_manhica$x <-
+  census_manhica$lon <-
+  census_manhica$lng
+census_manhica$latitude <-
+  census_manhica$y <-
+  census_manhica$lat
+census_manhica$geo <- 'Manhiça'
+census_manhica <-
+  census_manhica %>%
+  dplyr::select(permid,
+                dob,
+                gender,
+                name,
+                house_number,
+                lng,
+                longitude,
+                x,
+                lon,
+                lat,
+                latitude,
+                y,
+                geo)
+# Recode gender
+census_manhica$gender <-
+  ifelse(census_manhica$gender == 'F',
+         'female',
+         ifelse(census_manhica$gender == 'M',
+                'male', 
+                NA))
+census <- census_manhica
+census_manhica <- NULL
+```
+
+The distribution of Manhiça residents, per the census, is as follows:
+
+```{r}
+
+ggplot() +
+  coord_map() +
+  geom_polygon(data = man3_fortified,
+               aes(x = long, y =lat, group = group), 
+               fill = 'grey', color = 'white') +
+  # Add the census
+  geom_point(data = census,
+                 aes(x = lng,
+                     y = lat),
+             alpha = 0.6,
+             pch = '.') +
+  theme(axis.title = element_blank(), 
+        text = element_text(size = 12)) +
+  xlab('Longitude') +
+  ylab('Latitude') +
+  theme_map()
+
+```
+
+Given that a scattering of points is difficult to visualize in high density (hundreds of thousands of residents), we can also take a look at a smoothed contour of resident locations.
+
+```{r}
+# Smoothed contours
+ggplot() +
+  coord_map() +
+  geom_polygon(data = man3_fortified,
+               aes(x = long, y =lat, group = group), 
+               fill = 'grey', color = 'white') +
+  # Add the census
+  geom_density2d() +
+  stat_density2d(data = census,
+                 aes(x = lng,
+                     y = lat,
+                     fill = ..level..,
+                     alpha = ..level..),
+                 size = 2,
+                 bins = 100,
+                 geom = 'polygon') +
+  scale_fill_gradient(low = "green", high = "red", name = '') +
+  scale_alpha(range = c(0.00, 1),
+              guide = FALSE) +
+  theme_map() +
+    theme(legend.position = "none", 
+        axis.title = element_blank(), 
+        text = element_text(size = 12)) 
+# xlab('Longitude') +
+  # ylab('Latitude')
+  
+```
+
+An alternative is to get the number of residents per district:
+
+```{r}
+# Get nearest health center for everyone in census
+census <- census %>% 
+  filter(!duplicated(permid))
+census_spatial <- census
+census_spatial <- census_spatial %>% filter(!is.na(lng), !is.na(lat))
+coordinates(census_spatial) <- ~x+y
+proj4string(census_spatial) <- proj4string(unidades_sanitarias)
+
+# Get distances to nearest
+distances <- spDists(x = census_spatial,
+                       y = unidades_sanitarias,
+                        longlat = TRUE)
+
+# Get minimum distance
+census_spatial$distance <- apply(distances,
+                                 1,
+                                 min,
+                                 na.rm = TRUE)
+
+# Get closest center
+census_spatial$health_post <-
+  apply(distances,
+        1,
+        function(x){
+          unidades_sanitarias$unidad_sanitaria[which.min(x)]
+        })
+
+# Get distance to manhica
+manhica_index <- 7 #unidades_sanitarias$unidad_sanitaria
+census_spatial$distance_to_manhica_health_post <- distances[,manhica_index]
+
+# Get prevalence for each spatial point too
+census_spatial$prevalence <- extract(r, census_spatial)
+# Join back to census
+census <-
+  census %>% 
+  left_join(census_spatial@data)
+
+# Project likelihood of every person of having hiv
+hiv_likelihood <- 
+  census %>%
+  dplyr::select(lng,
+                lat,
+                dob,
+                gender) %>%
+  rename(sex = gender) %>%
+  mutate(years = as.numeric(as.Date('2016-10-01') - 
+           census$dob) / 365.25) %>%
+  mutate(age = ifelse(years < 15, NA,
+                      ifelse(years >= 15 &
+                               years < 18,
+                             '15-18',
+                             ifelse(years >= 18 &
+                                      years < 27,
+                                    '18-27',
+                                    ifelse(years >= 27 &
+                                             years < 37,
+                                           '28-37',
+                                           ifelse(years >= 37 &
+                                                    years < 49,
+                                                  '38-49',
+                                                  ifelse(years >=49 &
+                                                           years < 64,
+                                                         '50-64',
+                                                         ifelse(years >= 64,
+                                                                '65+', NA)))))))) %>%
+  dplyr::select(lng,
+                lat,
+                sex, 
+                age)
+
+# Join to prevalence
+hiv_likelihood <-
+  left_join(hiv_likelihood,
+            hiv_prev)
+# Make spatial
+hiv_likelihood <- hiv_likelihood %>% filter(!is.na(lng),
+                                            !is.na(lat))
+hiv_likelihood_spatial <- hiv_likelihood
+hiv_likelihood_spatial$x <- hiv_likelihood$lng
+hiv_likelihood_spatial$y <- hiv_likelihood$lat
+coordinates(hiv_likelihood_spatial) <- ~x+y
+proj4string(hiv_likelihood_spatial) <- proj4string(man)
+
+# ALSO JOIN FOR TESFAM DATA
+tesfam@data <-
+  tesfam@data %>%
+  mutate(permid = perm_id) %>%
+  left_join(census %>%
+  dplyr::select(dob,
+                gender,
+                permid) %>%
+    filter(!duplicated(permid)) %>%
+  rename(sex = gender) %>%
+  mutate(years = as.numeric(as.Date('2016-10-01') - 
+           dob) / 365.25) %>%
+  mutate(age = ifelse(years < 15, NA,
+                      ifelse(years >= 15 &
+                               years < 18,
+                             '15-18',
+                             ifelse(years >= 18 &
+                                      years < 27,
+                                    '18-27',
+                                    ifelse(years >= 27 &
+                                             years < 37,
+                                           '28-37',
+                                           ifelse(years >= 37 &
+                                                    years < 49,
+                                                  '38-49',
+                                                  ifelse(years >=49 &
+                                                           years < 64,
+                                                         '50-64',
+                                                         ifelse(years >= 64,
+                                                                '65+', NA)))))))) %>%
+  dplyr::select(sex, 
+                age,
+                permid) %>%
+    left_join(hiv_prev))
+```
+
+```{r}
+x <- over(hiv_likelihood_spatial, polygons(man3))
+districts <- man3$NAME_3
+hiv_likelihood$district <- districts[x]
+x <- hiv_likelihood %>%
+  group_by(district) %>%
+  summarise(n = n(),
+            estimated_prevalence = mean(prevalence, na.rm = TRUE))
+```
+
+## HIV prevalence over space
+
+Now we can combine our two data sources to estimate two values:
+
+1. The prevalence of HIV by location (ie, the likelihood of being HIV positive, given the demographic make-up of a location)
+
+2. The proximity of any location to HIV-positive residents.
+
+This approach allows us to estimate the prevalence by district:
+
+```{r}
+x <- x %>% arrange(estimated_prevalence)
+x <- x %>% filter(!is.na(district))
+x$district <- factor(x$district, levels = x$district)
+ggplot(data = x,
+       aes(x = district,
+           y = estimated_prevalence)) +
+  geom_bar(stat = 'identity',
+           alpha = 0.6) +
+  theme_economist() +
+  theme(axis.text.x = element_text(angle = 90)) +
+  xlab('') +
+  ylab('Estimated prevalence') +
+  ggtitle('Estimated HIV prevalence by District') +
+  geom_label(aes(label = paste0(round(estimated_prevalence, digits = 2), '%')))  +
+  ylim(0, max(x$estimated_prevalence) + 3)
+```
+
+Which we can also visualize spatially:
+
+```{r}
+y <- man3_fortified %>%
+  left_join(x,
+            by = c('id' = 'district')) %>%
+  rename(`%` = estimated_prevalence)
+ggplot(y,
+       aes(x = long, y = lat)) +
+  geom_polygon(aes(group = id,
+                   fill = `%`)) +
+  coord_map() +
+    xlab('Longitude') +
+  ylab('Latitude') +
+  ggtitle('Estimated prevalence of HIV') +
+  theme(panel.background = element_rect(fill = 'white', 
+                                        colour = 'white'),
+        panel.grid.major = element_line(colour = "white"))
+```
+
+```{r}
+
+# Create a gridded dataframe with values 
+# for the entire range (bbox) of man
+df_grid <- expand.grid(lng = seq(bbox(man)[1,1],
+                                 bbox(man)[1,2],
+                                 by = 0.01),
+                       lat = seq(bbox(man)[2,1],
+                                 bbox(man)[2,2],
+                                 by = 0.01),
+                       hiv = NA,
+                       hiv_score = NA,
+                       within_10 = NA,
+                       within_05 = NA,
+                       within_01 = NA,
+                       color = NA)
+df_grid$latitude <- df_grid$lat
+df_grid$longitude <- df_grid$lng
+coordinates(df_grid) <- ~longitude+latitude
+
+# Go through each row of df_grid, getting the 
+# weighted mean hiv score for that point
+# and putting a color into df_grid
+if('df_grid.RData' %in% dir()){
+  load('df_grid.RData')
+} else {
+  the_rows <- nrow(df_grid)
+  for (i in 1:nrow(df_grid)){
+    message(paste0(i, ' of ', the_rows))
+  # Get distance from every point in cmagvec
+  distances <- spDistsN1(pts = hiv_likelihood_spatial,
+                        pt = df_grid[i,],
+                        longlat = TRUE)
+  # Define which are acceptably close
+  close_enough <- which(distances <= 50)
+  # Get an hiv score
+  hiv <- stats::weighted.mean(x = hiv_likelihood_spatial$prevalence[close_enough],
+                       w = (1 / distances[close_enough]) ^2,
+                       na.rm = TRUE)
+  # Assign hiv to the dataframe
+  df_grid$hiv[i] <- hiv
+  # Get the hiv score on a 0-1000 scale
+  # and add 1 so that it's on a 1-1001 scale (for coloring)
+  hiv_score <- round(hiv * 1000) + 1
+  df_grid$hiv_score[i] <- hiv_score
+  
+  # Get likely number of hiv positives within 10 km
+  within_10 <- (mean(hiv_likelihood_spatial$prevalence[distances <= 10], na.rm = TRUE)/100) *
+    length(which(distances <= 10))
+  df_grid$within_10[i] <- ifelse(is.na(within_10),
+                                 0,
+                                 within_10)
+  
+    # Get likely number of hiv positives within 5 km
+  within_05 <- (mean(hiv_likelihood_spatial$prevalence[distances <= 05], na.rm = TRUE)/100) *
+    length(which(distances <= 05))
+  df_grid$within_05[i] <- ifelse(is.na(within_05),
+                                 0,
+                                 within_05)
+  
+      # Get likely number of hiv positives within 1 km
+  within_01 <- (mean(hiv_likelihood_spatial$prevalence[distances <= 01], na.rm = TRUE)/100) *
+    length(which(distances <= 01))
+  df_grid$within_01[i] <- ifelse(is.na(within_01),
+                                 0,
+                                 within_01)
+    
+}
+save('df_grid', file = 'df_grid.RData')
+
+}
+
+# Fix up the hiv score
+df_grid$hiv_score <-
+  df_grid$hiv_score -
+  min(df_grid$hiv_score, na.rm = TRUE)
+
+# Create a n length color vector
+color_vector <-
+  colorRampPalette(c('red', 'yellow', 'green'))(max(df_grid$hiv_score, na.rm = TRUE) +1)
+
+# If there are no nearby obs, just make white
+# otherwise, give it a color from the palette
+df_grid$color <- 
+  ifelse(is.na(df_grid$hiv_score),
+         'white',
+         color_vector[df_grid$hiv_score])
+
+```
+
+```{r}
+# Convert df_grid to raster
+temp <- df_grid@data %>% arrange(lng, lat)
+r <- rasterFromXYZ(temp[, c('lng', 'lat', 'hiv')])
+# Make only for district
+proj4string(df_grid) <- proj4string(man)
+x <- over(df_grid, polygons(man))
+df_grid_small <- df_grid[!is.na(x),]
+temp <- df_grid_small@data %>% arrange(lng, lat)
+r <- rasterFromXYZ(temp[, c('lng', 'lat', 'hiv')], crs = proj4string(man))
+plot(r)
+# levelplot(r, 
+#           # zscaleLog=TRUE,
+#           # par.settings = RdBuTheme,
+#           contour=FALSE)
+contour(r, add = TRUE,
+        col = adjustcolor('black', alpha.f = 0.3))
+title(main = 'Estimated HIV prevalence')
+# vectorplot(r, par.settings=RdBuTheme())
+```
+
+In addition to examining the prevalence (which is independent of population density), we can also examine the number of estimated HIV positive cases within a certain proximity of each location, thereby taking into account both prevalence and density.
+
+```{r}
+temp <- df_grid_small@data %>% arrange(lng, lat)
+r <- rasterFromXYZ(temp[, c('lng', 'lat', 'within_10')], crs = proj4string(man))
+plot(r)
+contour(r, add = TRUE,
+        col = adjustcolor('black', alpha.f = 0.3))
+title(main = 'Estimated HIV positive residents within 10 kilometers')
+```
+
+We can do the same for 5 kilometers.
+
+
+```{r}
+temp <- df_grid_small@data %>% arrange(lng, lat)
+r <- rasterFromXYZ(temp[, c('lng', 'lat', 'within_05')], crs = proj4string(man))
+plot(r)
+contour(r, add = TRUE,
+        col = adjustcolor('black', alpha.f = 0.3))
+title(main = 'Estimated HIV positive residents within 5 kilometers')
+```
+
+Or 1 kilometer:
+
+
+```{r}
+temp <- df_grid_small@data %>% arrange(lng, lat)
+r <- rasterFromXYZ(temp[, c('lng', 'lat', 'within_01')], crs = proj4string(man))
+plot(r)
+contour(r, add = TRUE,
+        col = adjustcolor('black', alpha.f = 0.3))
+title(main = 'Estimated HIV positive residents within 1 kilometer')
+```
+
+
+
+```{r, eval = FALSE}
+ggplot(man3_fortified,
+       aes(x = long, y = lat)) +
+  geom_polygon(aes(group = id), fill = 'black') +
+  geom_point(data = temp,
+             aes(x = lng, y = lat, col = hiv),
+             size = 1) +
+    geom_polygon(aes(group = id), fill = NA, color = 'black', alpha = 0.5) +
+  coord_map() +
+    xlab('Longitude') +
+  ylab('Latitude') +
+  ggtitle('hiv coverage (census)') +
+  theme(panel.background = element_rect(fill = 'white', 
+                                        colour = 'white'),
+        panel.grid.major = element_line(colour = "white")) +
+  scale_color_gradient2(low = 'white', high = 'blue')
+```
+
+Rather than analyzing over all space, we can focus only on health centers. Specifically, we may want to examine the likely number of HIV-positive residents within n meters of each health post (so as to gauge patient load).
+
+```{r}
+distances <- seq(0, 50, length = 101)
+places <- sort(unique(unidades_sanitarias$unidad_sanitaria))
+if('hiv_prev_by_us.RData' %in% dir()){
+  load('hiv_prev_by_us.RData')
+} else {
+    x <- expand.grid(distance = distances,
+                   place = places)
+  x$people <- x$hiv <- NA
+  # Loop through each combination of distance and unidad
+  # sanitaria to get number of HIV positive people within n kilometers
+  for (i in 1:nrow(x)){
+    this_us <- x$place[i]
+    this_distance <- x$distance[i]
+    if(this_distance == 0){
+      x$hiv[i] <- x$people[i] <- 0
+    } else {
+    sub_us <- us[us@data$unidad_sanitaria == this_us,]
+      # Get distance from every point in cmagvec
+    distances <- spDistsN1(pts = hiv_likelihood_spatial,
+                          pt = sub_us,
+                          longlat = TRUE)
+    # Define which are acceptably close
+    close_enough <- which(distances <= this_distance)
+    # Get total number of people
+    x$people[i] <- length(close_enough)
+    # Get average
+    x$hiv[i] <- 
+      (mean(hiv_likelihood_spatial$prevalence[close_enough], na.rm = TRUE) / 100) *
+      x$people[i]
+    }
+    message(i)
+  }
+
+save(x, file = 'hiv_prev_by_us.RData')
+}
+
+cols <- colorRampPalette(brewer.pal(n = 9,
+                                    name = 'Spectral'))(length(unique(x$place)))
+ggplot(data = x %>%
+         mutate(place = gsub('Centro de saude de ', 
+                             '',
+                             place)),
+       aes(x = distance,
+           y = hiv)) +
+  geom_line(aes(color = place)) +
+  scale_color_manual(name = 'Health center',
+                     values = cols) +
+  theme_tufte() +
+  xlab('Kilometers') +
+  ylab('Number of HIV positive residents') +
+  ggtitle('HIV positive residents and proximity to health centers')
+
+```
+
+Alternatively, we can focus exclusively on Manhiça.
+
+```{r}
+
+cols <- colorRampPalette(brewer.pal(n = 9,
+                                    name = 'Spectral'))(length(unique(x$place)))
+ggplot(data = x %>%
+         mutate(place = gsub('Centro de saude de ', 
+                             '',
+                             place)) %>%
+         filter(place == 'manhica sede'),
+       aes(x = distance,
+           y = hiv)) +
+  geom_line() +
+  theme_tufte() +
+  xlab('Kilometers') +
+  ylab('Number of HIV positive residents') +
+  ggtitle('HIV positive residents and proximity to health centers',
+       'Manhiça only') +
+  xlim(0, 60)
+
+```
+
+## Study participants and nearby prevalence
+
+We can visualize our HIV prevalence distribution ALONG WITH our study participant locations.
+
+```{r}
+temp <- df_grid@data %>% arrange(lng, lat)
+r <- rasterFromXYZ(temp[, c('lng', 'lat', 'hiv')])
+# Make only for district
+proj4string(df_grid) <- proj4string(man)
+x <- over(df_grid, polygons(man))
+df_grid_small <- df_grid[!is.na(x),]
+temp <- df_grid_small@data %>% arrange(lng, lat)
+r <- rasterFromXYZ(temp[, c('lng', 'lat', 'hiv')], crs = proj4string(man))
+
+plot(r)
+points(tesfam,
+       pch = '.',
+       col = adjustcolor('black', alpha.f = 0.3),
+       cex = 2)
+title(main = 'Estimated HIV prevalence and TESFAM participants')
+```
+
+Well, that's confusing. What we really want to know is if our study participants are in areas that are more or less likely than the general population to be affected by HIV. Right?
+
+```{r}
+# Convert df_grid to raster
+temp <- df_grid@data %>% arrange(lng, lat)
+r <- rasterFromXYZ(temp[, c('lng', 'lat', 'hiv')])
+# Make only for district
+proj4string(df_grid) <- proj4string(man)
+x <- over(df_grid, polygons(man))
+df_grid_small <- df_grid[!is.na(x),]
+temp <- df_grid_small@data %>% arrange(lng, lat)
+r <- rasterFromXYZ(temp[, c('lng', 'lat', 'hiv')], crs = proj4string(man))
+
+x <- extract(x = r,
+             y = tesfam)
+tesfam@data$prevalence <- x
+z <- data.frame(
+  src = 'participants',
+  x = x
+)
+z2 <- data.frame(
+  src = 'all',
+  x = jitter(y$`%`, factor = 150)
+)
+z <- rbind(z, z2)
+
+ggplot(data = z,
+       aes(x = x,
+           group = src,
+           fill = src)) +
+  geom_density(alpha = 0.6) +
+  theme_economist() +
+  scale_fill_manual(name = '',
+                    values = c('darkblue',
+                             'darkred')) +
+  ggtitle('Distribution of prevalence: study participants vs. at-large') +
+  xlab('%') +
+  ylab('Density')
+```
+
+The answer to that question is yes. The HIV prevalence in Manhiça is around `r mean(y[,"%"])`, whereas study participants live in areas with an average prevalence of `r mean(x)`.
+
+## Summary statistics by catchment area
+
+```{r}
+
+# Get prevalence for each spatial point too
+census_spatial$prevalence <- extract(r, census_spatial)
+# Join back to census
+census <-
+  census %>% 
+  left_join(census_spatial@data)
+
+
+load('hiv_prev_by_us.RData') # becomes x, created above
+x <- x %>% 
+  filter(distance %in% c(1, 5, 10))
+# Get within catchment area
+y <- census %>%
+  group_by(distance = 'Catchment area',
+           place = health_post) %>%
+  summarise(hiv = sum(prevalence/100, na.rm = TRUE),
+            people = n()) %>%
+  ungroup
+x <- rbind(x,y) %>%
+  arrange(distance)
+x$place <- 
+  gsub('Centro de saude de ',
+       '',
+       x$place)
+
+```
+
+What follow are some simple summary statistics by health post / catchment area.
+
+```{r}
+cols <- colorRampPalette(brewer.pal(n = 9,
+                                    name = 'Spectral'))(length(unique(x$distance)))
+ggplot(data = x,
+       aes(x = place,
+           y = people,
+           group = distance,
+           fill = distance)) +
+  theme_economist() +
+  geom_bar(stat = 'identity',
+           position = 'dodge') +
+  theme(axis.text.x = element_text(angle = 90)) +
+  scale_fill_manual(name = 'Distance / kilometers',
+                    values = cols) +
+  ylab('Total residents') +
+  xlab('Unidad sanitaria') +
+  ggtitle('Total resident load by health center')
+
+ggplot(data = x,
+       aes(x = place,
+           y = hiv,
+           group = distance,
+           fill = distance)) +
+  theme_economist() +
+  geom_bar(stat = 'identity',
+           position = 'dodge') +
+  theme(axis.text.x = element_text(angle = 90)) +
+  scale_fill_manual(name = 'Distance / kilometers',
+                    values = cols) +
+  ylab('Residents with HIV') +
+  xlab('Unidad sanitaria') +
+  ggtitle('HIV load by health center')
+```
+
+Alternatively, the below table has full details on the number of people and HIV positive people pertaining to each unidad sanitaria. Distance in numbers refers to radial kilometers; catchment area is self-explanatory.
+
+```{r}
+DT::datatable(x %>% arrange(place) %>%
+                mutate(hiv = round(hiv)))
+```
+
+### Statistical significance 
+
+In examining the question of a _correct_ distribution by health center, we can use simple Chi-squared tests to examine the likelihood that the distribution of residents by health center can be attributed to chance.
+
+```{r}
+the_test <- chisq.test(x = x$people[x$distance == 'Catchment area'])
+print(the_test)
+```
+
+We can also examine the likelihood that the distribution of HIV POSITIVE residents by health center can be attributed to chance.
+
+```{r}
+the_test <- chisq.test(x = x$hiv[x$distance == 'Catchment area'])
+print(the_test)
+```
+
+In both of the above cases, we reject the null hypothesis (ie, the differences in number of patients and in number of HIV positive patients IS statistically significant).
+
+A perhaps more useful test is to see whether the prevalence is different. We can do this through simple logistic regression.
+
+```{r}
+model_data <- x[x$distance == 'Catchment area',] %>%
+  filter(!is.na(place)) %>%
+  mutate(hiv = round(hiv))
+model_data$place <- trimws(model_data$place)
+model_data$place <- factor(model_data$place, levels = unique(c('manhica sede',
+                                                               model_data$place)))
+fit <- glm(cbind(hiv, people) ~ place,
+           data = model_data,
+           family = binomial('logit'))
+ors <- exp(cbind(OR = coef(fit), confint(fit))) %>%
+  data.frame
+ors$health_post <- row.names(ors)
+row.names(ors) <- NULL
+ors$health_post <- gsub('place', '', ors$health_post)
+ors <- ors %>% filter(health_post != '(Intercept)')
+names(ors)[2:3] <- c('lwr', 'upr')
+print(ors)
+
+```
+
+Testing in this way, we find that (relative to the baseline of `r as.character(levels(model_data$place)[1])`), there are some significant differences in the prevalence of estimated HIV. See above table or below chart.
+
+```{r}
+ggplot(data = ors,
+       aes(x = health_post,
+           y = OR)) +
+  geom_point(alpha = 0.6) +
+  geom_linerange(aes(ymax = upr,
+                     ymin = lwr),
+                 alpha = 0.6) +
+  geom_hline(yintercept = 1, lty = 3) +
+  xlab('Health post') +
+  ylab('Odds of HIV') +
+  theme_tufte() +
+  theme(axis.text.x = element_text(angle = 90)) +
+  ggtitle('Statistically significant differences in estimated odds of HIV by location')
+
+```
+
+```{r}
+# Generate distances for elisa
+x <- tesfam@data %>%
+  dplyr::select(ssid,
+                perm_id,
+                health_post,
+                distance,
+                distance_to_manhica_health_post)
+write_csv(x, '~/Desktop/distances_for_elisa.csv')
+```
 
 # Analysis
 
-Association between distance to center and likelihood of being lost to follow-up. 
+## Does distance to center matter?
+
+Association between distance to center and likelihood of being lost to follow-up. We model the likelihood of being lost to followup at 6 months, only among those who are in Manhiça's catchment area, as a function of distance to the Manhiça health post. In other words, this is entirely _unadjusted_ for all other factors.
 
 ```{r}
 # Logistic regression model
-fit <- glm(abandono_6mo ~ distance, 
-           data = tesfam@data,
+fit <- glm(abandono_6mo ~ distance_to_manhica_health_post, 
+           data = tesfam@data %>%
+             filter(health_post == 'Centro de saude de manhica sede'),
            family = binomial('logit'))
 ors <- exp(cbind(OR = coef(fit), confint(fit))) %>%
   data.frame
@@ -611,7 +1364,8 @@ ors <- exp(cbind(OR = coef(fit), confint(fit))) %>%
 Using a simple logistic regression model, we estimate that for every 1 kilometer further from a health post, the odds of being lost to follow-up at 6 months increases by `r round((ors$OR[2] - 1) * 100, digits = 2)`% (OR of `r ors$OR[2]`, 95% confidence interval of `r ors$X2.5..[2]` to `r ors$X97.5..[2]`). Our fitted model can be visualized like this.
 
 ```{r}
-fake <- data.frame(distance = seq(0, 25, length = 100))
+
+fake <- data.frame(distance_to_manhica_health_post = seq(0, 25, length = 100))
 predictions <- predict(fit, fake, type = 'link', se = TRUE)
 fake$predicted <- plogis(predictions$fit)
 fake$lwr <- plogis(predictions$fit - (1.96 * predictions$se.fit))
@@ -624,16 +1378,62 @@ fake_gathered <- tidyr::gather(data = fake,
                                predicted:upr)
 
 ggplot(data = fake) +
-  geom_linerange(aes(x = distance,
+  geom_linerange(aes(x = distance_to_manhica_health_post,
                      ymax = upr,
                      ymin = lwr),
                  alpha = 0.6) +
-  geom_line(aes(x = distance, y = predicted),
+  geom_line(aes(x = distance_to_manhica_health_post, y = predicted),
             color = 'red') +
   labs(title = 'Distance matters?',
        subtitle = 'Association of distance to health post and getting lost') +
   theme_economist() +
     xlab('Kilometers to health post') +
+  ylab('Likelihood of being lost to follow-up at 6 mo') 
+
+```
+
+## Does distance to Manhiça matter?
+
+## Does nearby prevalence matter?
+
+Association between nearby prevalence and likelihood of being lost to follow-up. 
+
+```{r}
+# Logistic regression model
+fit <- glm(abandono_6mo ~ prevalence, 
+           data = tesfam@data,
+           family = binomial('logit'))
+ors <- exp(cbind(OR = coef(fit), confint(fit))) %>%
+  data.frame
+```
+
+Using a simple logistic regression model, we estimate that for every 1 % increase in nearby prevalence, the odds of being lost to follow-up at 6 months increases by `r round((ors$OR[2] - 1) * 100, digits = 2)`% (OR of `r ors$OR[2]`, 95% confidence interval of `r ors$X2.5..[2]` to `r ors$X97.5..[2]`). Our fitted model can be visualized like this.
+
+```{r}
+
+fake <- data.frame(prevalence = seq(0, 50, length = 100))
+predictions <- predict(fit, fake, type = 'link', se = TRUE)
+fake$predicted <- plogis(predictions$fit)
+fake$lwr <- plogis(predictions$fit - (1.96 * predictions$se.fit))
+fake$upr <- plogis(predictions$fit + (1.96 * predictions$se.fit))
+
+# Gather
+fake_gathered <- tidyr::gather(data = fake,
+                               key, 
+                               value, 
+                               predicted:upr)
+
+ggplot(data = fake) +
+  geom_linerange(aes(x = prevalence,
+                     ymax = upr,
+                     ymin = lwr),
+                 alpha = 0.6) +
+  geom_line(aes(x = prevalence, y = predicted),
+            color = 'red') +
+  labs(title = 'Prevalence matters?',
+       subtitle = 'Association prevalence and getting lost to follow-up') +
+  theme_economist() +
+    xlab('Nearby estimated prevalence') +
   ylab('Likelihood of being lost to follow-up at 6 mo') 
 ```
 

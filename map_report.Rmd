@@ -1171,7 +1171,7 @@ df_grid_small <- df_grid[!is.na(x),]
 temp <- df_grid_small@data %>% arrange(lng, lat)
 r <- rasterFromXYZ(temp[, c('lng', 'lat', 'hiv')], crs = proj4string(man))
 
-x <- extract(x = r,
+x <- raster::extract(x = r,
              y = tesfam)
 tesfam@data$prevalence <- x
 z <- data.frame(
@@ -1203,10 +1203,10 @@ The answer to that question is yes. The HIV prevalence in Manhiça is around `r 
 ## Summary statistics by catchment area
 
 ```{r}
-
 # Get prevalence for each spatial point too
 census_spatial$prevalence <- extract(r, census_spatial)
 # Join back to census
+census$prevalence <- NULL
 census <-
   census %>% 
   left_join(census_spatial@data)
@@ -1301,6 +1301,7 @@ model_data <- x[x$distance == 'Catchment area',] %>%
 model_data$place <- trimws(model_data$place)
 model_data$place <- factor(model_data$place, levels = unique(c('manhica sede',
                                                                model_data$place)))
+
 fit <- glm(cbind(hiv, people) ~ place,
            data = model_data,
            family = binomial('logit'))
@@ -1551,4 +1552,55 @@ leaflet() %>%
 
 ```
 
+# Miscellaneous items
 
+## Significance test for average distance from health post for each catchment area
+
+```{r}
+library(tidyr)
+library(broom)
+fit <- lm(distance ~ health_post, data = census_spatial@data)
+var <- anova(fit)
+print(var)
+
+fit_tidy <- tidy(fit)
+ci <-  tidy(confint(fit))
+names(ci)[1] <- 'term'
+result <- left_join(fit_tidy, ci)
+result$term <- gsub('health_postCentro de saude de ', '', result$term)
+result$term <- factor(result$term, levels = result$term)
+
+ggplot(data = result,
+       aes(x = term,
+           y = estimate)) +
+  geom_bar(stat = 'identity') +
+  theme(axis.text.x = element_text(angle = 90))
+
+t.test(x = census_spatial@data$distance)
+```
+
+```{r}
+# # Write census table
+# x <- census %>%
+#   dplyr::select(permid,
+#                 distance, 
+#                 health_post,
+#                 distance_to_manhica_health_post,
+#                 longitude,
+#                 latitude,
+#                 gender)
+# write_csv(x, '~/Desktop/census_data_for_denise.csv')
+```
+
+# Estimated HIV numbers by health post
+
+```{r}
+# Prevalence by health post
+x <- census_spatial@data %>%
+  group_by(health_post) %>%
+  summarise(people = n(),
+            denominator = length(which(!is.na(prevalence))),
+            prevalence = mean(prevalence, na.rm = TRUE)) %>%
+  mutate(estimated_hiv_people = round(denominator * (prevalence / 100)))
+DT::datatable(x)
+``` 
